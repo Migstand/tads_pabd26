@@ -102,9 +102,9 @@ where
 -- where
 --     column1 = v1;
 -- Executar script: \i utils/script_index_fts.sql
-
 drop index if exists idx_people_names;
-create index idx_people_names on people(last_name, first_name);
+
+create index idx_people_names on people (last_name, first_name);
 
 explain analyze
 select
@@ -129,9 +129,80 @@ where
     first_name = 'Lou';
 
 /* 
-    TO DO: CRIAÇÃO DE ÍNDICES - Esquema lista01
+TO DO: CRIAÇÃO DE ÍNDICES - Esquema lista01
 
-    - Baseado nas views (comando \dmv), quais índices poderiam ser criados?
-    - Para forçar o uso dos índices em tabelas pequenas: SET enable_seqscan = off;
-/*
+- Baseado nas views (comando \dmv), quais índices poderiam ser criados?
+- Para forçar o uso dos índices em tabelas pequenas: SET enable_seqscan = off;
+ */
+-- Típos de índices
+-- Hash
+drop index if exists idx_customer_email_hash;
 
+create index idx_customer_email_hash on customer using hash (email);
+
+explain analyze
+select
+    first_name
+from
+    customer
+where
+    email = 'a@tads.ifrn';
+
+-- GIN
+select
+    to_tsvector ('watches'),
+    to_tsvector ('watched'),
+    to_tsvector ('watching');
+
+select
+    to_tsvector ('The quick brown fox jumps over the lazy dog.');
+
+select
+    id,
+    to_tsvector ('portuguese', body) body_search
+from
+    posts;
+
+select
+    id,
+    to_tsvector ('portuguese', title || ' ' || body) search
+from
+    posts;
+
+drop index if exists idx_posts_search_gin;
+
+create index idx_posts_search_gin on posts using gin (to_tsvector ('portuguese', title || ' ' || body));
+
+select
+    id,
+    title,
+    body
+from
+    posts
+where
+    -- 1) Busca título e corpo que contenham as palavras 'postgresql' E 'recursos'
+    -- to_tsvector ('portuguese', title || ' ' || body) @@ to_tsquery('portuguese', 'postgresql & recursos');
+    -- 2) Busca título e corpo que contenham as palavras 'eficiente' OU 'recursos'
+    -- to_tsvector ('portuguese', title || ' ' || body) @@ to_tsquery('portuguese', 'eficiente | recursos');
+    -- 3) Busca título e corpo que contenha a frase "full-text search"
+    -- to_tsvector ('portuguese', title || ' ' || body) @@ to_tsquery('portuguese', '''full-text search''');
+    -- 4) Busca título e corpo que NÃO contenha a palavra 'eficiente'
+    -- to_tsvector ('portuguese', title || ' ' || body) @@ to_tsquery('portuguese', '!eficiente');
+    -- 5) Busca título e corpo por prefixo 'con'
+    -- to_tsvector ('portuguese', title || ' ' || body) @@ to_tsquery('portuguese', 'con:*');
+
+select
+    id,
+    title,
+    body,
+    ts_rank(
+        setweight(to_tsvector('portuguese', title), 'A') ||
+        setweight(to_tsvector('portuguese', body), 'B'),
+        to_tsquery('portuguese', 'postgresql')
+    ) rank
+from posts
+where (
+    setweight(to_tsvector('portuguese', title), 'A') ||
+    setweight(to_tsvector('portuguese', body), 'B')
+    ) @@ to_tsquery('portuguese', 'postgresql')
+order by rank desc;
