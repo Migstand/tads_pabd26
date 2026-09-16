@@ -134,8 +134,10 @@ TO DO: CRIAÇÃO DE ÍNDICES - Esquema lista01
 - Baseado nas views (comando \dmv), quais índices poderiam ser criados?
 - Para forçar o uso dos índices em tabelas pequenas: SET enable_seqscan = off;
  */
--- Típos de índices
--- Hash
+
+-- # Típos de índices
+
+-- ## Hash
 drop index if exists idx_customer_email_hash;
 
 create index idx_customer_email_hash on customer using hash (email);
@@ -206,3 +208,77 @@ where (
     setweight(to_tsvector('portuguese', body), 'B')
     ) @@ to_tsquery('portuguese', 'postgresql')
 order by rank desc;
+
+-- Para tabelas muito grandes, criar coluna gerada (search_vector) e um índice GIN
+-- OBS.: Olhar alteração no DDL da tabela posts
+
+drop index idx_posts_search_vector_gin;
+create index idx_posts_search_vector_gin on posts using gin (search_vector);
+
+explain analyze
+select
+    id,
+    title,
+    body,
+    ts_rank(
+        search_vector,
+        to_tsquery('portuguese', 'postgresql')
+    ) rank
+from posts
+where search_vector @@ to_tsquery('portuguese', 'postgresql')
+order by rank desc;
+
+-- PostgreSQL analisa se vale a pena usar índice. Para forçar:
+set enable_seqscan = off;
+
+-- Para resetar:
+reset enable_seqscan;
+
+-- # JSON Search
+
+-- ## Operadores de extração
+
+-- -> extrai o campo como json/jsonb
+select id, data -> 'position' position_jsonb from employee_json;
+
+-- ->> extrair o campo como text
+select id, data ->> 'position' position_text from employee_json;
+
+select id, data ->> 'first_name' first_name
+from employee_json
+where data ->> 'position' = 'Developer';
+
+select id, data ->> 'first_name' first_name, data ->> 'salary' salary
+from employee_json
+where (data ->> 'salary')::numeric > 5000;
+
+-- #> usado para valores aninhados. Retorna jsonb
+select id, data #> '{address, country}' country_json
+from employee_json;
+
+-- #>> usado para valores aninhados. Retorna text
+select id, data #>> '{address, country}' country_text
+from employee_json;
+
+select id, data #>> '{address, country}' country_text
+from employee_json
+where data #>> '{address, country}' = 'Brasil'; 
+
+-- # OPERADORES DE CONTENÇÃO
+
+-- @> 'data' CONTÉM ...?
+select id, data ->> 'first_name' first_name
+from employee_json
+where data @> '{"first_name": "Gael"}';
+
+select id, data ->> 'first_name' first_name
+from employee_json
+where data @> '{"position": "Developer", "active": true}';
+
+select id, data ->> 'first_name' first_name
+from employee_json
+where data @> '{"address": {"country": "Brasil"}}';
+
+select id, data ->> 'first_name' first_name
+from employee_json
+where data @> '{"skills": ["react", "sql"]}';
